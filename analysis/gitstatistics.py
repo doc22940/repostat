@@ -3,6 +3,7 @@ from datetime import datetime, tzinfo, timedelta
 from collections import Counter
 import warnings
 import os
+from distutils import version
 
 from tools.timeit import Timeit
 from tools import sort_keys_by_value_of_key, split_email_address
@@ -121,11 +122,19 @@ class AuthorDictFactory:
 
 
 class GitStatistics:
+    is_mailmap_supported = True if version.LooseVersion(git.LIBGIT2_VERSION) >= '0.28.0' else False
+
     def __init__(self, path):
         """
         :param path: path to a repository
         """
         self.repo = git.Repository(path)
+        if GitStatistics.is_mailmap_supported:
+            self.mailmap = git.Mailmap.from_repository(self.repo)
+            self.signature_mapper = lambda signature: self.mailmap.resolve_signature(signature)
+        else:
+            self.signature_mapper = lambda signature: signature
+
         self.created_time_stamp = datetime.now().timestamp()
         self.analysed_branch = self.repo.head.shorthand
         self.author_of_year = {}
@@ -135,6 +144,7 @@ class GitStatistics:
         self.author_changes_history = {}
         self.commits = []
         self.authors = self.fetch_authors_info()
+        self.contribution = self.fetch_contributors()
         self.tags = self.fetch_tags_info()
         self.domains = self.fetch_domains_info()
         self.timezones = self.fetch_timezone_info()
@@ -234,7 +244,7 @@ class GitStatistics:
 
             commit_day_str = datetime.fromtimestamp(child_commit.author.time).strftime('%Y-%m-%d')
 
-            author_name = child_commit.author.name
+            author_name = self.signature_mapper(child_commit.author).name
             lines_added = st.insertions if not is_merge_commit else 0
             lines_removed = st.deletions if not is_merge_commit else 0
 
@@ -270,7 +280,8 @@ class GitStatistics:
         commit_count = 0
         for commit in self.repo.walk(self.repo.head.target, git.GIT_SORT_TOPOLOGICAL | git.GIT_SORT_REVERSE):
             commit_count += 1
-            authors[commit.author.name] = authors.get(commit.author.name, 0) + 1
+            commit_author = self.signature_mapper(commit.author)
+            authors[commit_author.name] = authors.get(commit_author.name, 0) + 1
             if commit.oid in commit_tag.keys():
                 tagname = commit_tag[commit.oid]
                 result[tagname]['commits'] = commit_count
@@ -286,7 +297,8 @@ class GitStatistics:
         result = {}
         for commit in self.repo.walk(self.repo.head.target):
             try:
-                _, domain = split_email_address(commit.author.email)
+                author_signature = self.signature_mapper(commit.author)
+                _, domain = split_email_address(author_signature.email)
             except ValueError as ex:
                 warnings.warn(str(ex))
                 result["unknown"] = result.get("unknown", 0) + 1
@@ -331,14 +343,15 @@ class GitStatistics:
             year_month = date.strftime('%Y-%m')
             activity[month] = activity.get(month, 0) + 1
             activity_year_month[year_month] = activity_year_month.get(year_month, 0) + 1
+            commit_author = self.signature_mapper(commit.author)
             try:
-                authors[month].add(commit.author.name)
+                authors[month].add(commit_author.name)
             except KeyError:
-                authors[month] = {commit.author.name}
+                authors[month] = {commit_author.name}
             try:
-                authors_year_month[year_month].add(commit.author.name)
+                authors_year_month[year_month].add(commit_author.name)
             except KeyError:
-                authors_year_month[year_month] = {commit.author.name}
+                authors_year_month[year_month] = {commit_author.name}
 
             self._adjust_commits_timeline(date)
         return activity, authors, activity_year_month, authors_year_month
@@ -357,14 +370,30 @@ class GitStatistics:
 
         return activity
 
-    @staticmethod
-    def build_history_item(child_commit, stat) -> dict:
+    @Timeit("Fetching current tree contributors")
+    def fetch_contributors(self):
+        head_commit = self.repo.head.peel()
+        contribution = {}
+
+        submodules_paths = self.repo.listall_submodules()
+        for p in head_commit.tree.diff_to_tree():
+            file_to_blame = p.delta.new_file.path
+            if file_to_blame not in submodules_paths:
+                blob_blame = self.repo.blame(file_to_blame)
+                for blame_hunk in blob_blame:
+                    committer = self.signature_mapper(blame_hunk.final_committer)
+                    contribution[committer.name] = contribution.get(committer.name, 0) + blame_hunk.lines_in_hunk
+
+        return contribution
+
+    def build_history_item(self, child_commit, stat) -> dict:
+        author = self.signature_mapper(child_commit.author)
         return {
             'files': stat.files_changed,
             'ins': stat.insertions,
             'del': stat.deletions,
-            'author': child_commit.author.name,
-            'author_mail': child_commit.author.email,
+            'author': author.name,
+            'author_mail': author.email,
             'is_merge': len(child_commit.parents) > 1,
             'commit_time': child_commit.commit_time,
             'oid': child_commit.oid,
@@ -449,7 +478,7 @@ class GitStatistics:
     def _adjust_author_changes_history(self, commit, authors_info: dict):
         ts = commit.author.time
 
-        author_name = commit.author.name
+        author_name = self.signature_mapper(commit.author).name
         if ts not in self.author_changes_history:
             self.author_changes_history[ts] = {}
         if author_name not in self.author_changes_history[ts]:
