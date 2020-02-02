@@ -42,17 +42,12 @@ class HTMLReportCreator(object):
         self.j2_env.filters['to_intensity'] = lambda val, max_val: 127 + int((float(val) / max_val) * 128)
 
     def _save_recent_activity_data(self):
-        # generate weeks to show (previous N weeks from now)
-        now = datetime.datetime.now()
-        weeks = []
-        stampcur = now
-        for i in range(0, self.recent_activity_period_weeks):
-            weeks.insert(0, stampcur.strftime('%Y-%W'))
-            stampcur -= datetime.timedelta(7)
-
+        # self.recent_activity_period_weeks from now
+        recent_activity_period = datetime.timedelta(7 * self.recent_activity_period_weeks)
+        recent_weekly_commits = self.git_repo_statistics.fetch_recent_activity(recent_activity_period)
         with open(os.path.join(self.path, 'recent_activity.dat'), 'w') as f:
             for i in range(0, self.recent_activity_period_weeks):
-                commits = self.git_repo_statistics.recent_activity_by_week.get(weeks[i], 0)
+                commits = recent_weekly_commits[i]
                 f.write("%d %d\n" % (self.recent_activity_period_weeks - i - 1, commits))
 
     def _get_authors(self, limit=None):
