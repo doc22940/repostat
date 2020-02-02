@@ -11,13 +11,17 @@ class History:
 
     def as_dataframe(self):
         data = self.fetch()
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        return df
 
     def fetch(self):
         repo_walker = self._get_repo_walker()
         records = []
         for commit in repo_walker:
-            records.append({'commit_sha': commit.hex, 'author_timestamp': commit.author.time})
+            records.append({'commit_sha': commit.hex,
+                            'author_timestamp': commit.author.time,
+                            'author_tz_offset': commit.author.offset
+                            })
         return records
 
     # abstract method

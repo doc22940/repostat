@@ -4,6 +4,7 @@ from collections import Counter
 import warnings
 import os
 from distutils import version
+import pandas as pd
 
 from tools.timeit import Timeit
 from tools import sort_keys_by_value_of_key, split_email_address
@@ -149,6 +150,7 @@ class GitStatistics:
                     return git.Signature(name, email, sig.time, sig.offset, 'utf-8')
                 else:
                     return mapped_signature
+
             self.signature_mapper = mapsig
         else:
             self.signature_mapper = lambda signature: signature
@@ -158,6 +160,7 @@ class GitStatistics:
         self.whole_history_df = whole_history_data.as_dataframe()
 
         self.created_time_stamp = datetime.now().timestamp()
+        self.repo_name = os.path.basename(os.path.abspath(path))
         self.analysed_branch = self.repo.head.shorthand
         self.author_of_year = {}
         self.author_of_month = {}
@@ -179,19 +182,22 @@ class GitStatistics:
         self.timezones = self.fetch_timezone_info()
         self.first_commit_timestamp = self.whole_history_df["author_timestamp"].min()
         self.last_commit_timestamp = self.whole_history_df["author_timestamp"].max()
-        self.active_days = {datetime.fromtimestamp(commit.author.time).strftime('%Y-%m-%d')
-                            for commit in self.repo.walk(self.repo.head.target)}
+        # Note, calculations here are done in UTC, calculation in local tz may give slightly different days count
+        self.active_days_count = pd.to_datetime(self.whole_history_df['author_timestamp'], unit='s'). \
+            dt.strftime('%Y-%m-%d').unique().size
+
+        # Weekday activity should be calculated in local timezones
+        # https://stackoverflow.com/questions/36648995/how-to-add-timezone-offset-to-pandas-datetime
         self.activity_weekly_hourly = self.fetch_weekly_hourly_activity()
         self.max_weekly_hourly_activity = max(
             commits_count for _, hourly_activity in self.activity_weekly_hourly.items()
             for _, commits_count in hourly_activity.items())
-        self.activity_monthly, self.authors_monthly, \
-            self.activity_year_monthly, self.author_year_monthly = self.fetch_monthly_activity()
+        self.activity_monthly, self.authors_monthly, self.activity_year_monthly, self.author_year_monthly \
+            = self.fetch_monthly_activity()
         self.recent_activity_by_week = self.fetch_recent_activity()
         self.recent_activity_peak = max(activity for activity in self.recent_activity_by_week.values())
-        self.changes_history, self.total_lines_added, \
-            self.total_lines_removed, self.total_lines_count = self.fetch_total_history()
-        self.repo_name = os.path.basename(os.path.abspath(path))
+        self.changes_history, self.total_lines_added, self.total_lines_removed, self.total_lines_count \
+            = self.fetch_total_history()
 
         # timestamp -> files count
         self.files_by_stamp = self._get_files_count_by_timestamp()
@@ -561,9 +567,6 @@ class GitStatistics:
     def get_commit_delta_days(self):
         return (self.last_commit_timestamp / 86400 - self.first_commit_timestamp / 86400) + 1
 
-    def get_active_days(self):
-        return self.active_days
-
     def get_total_line_count(self):
         return self.total_lines_count
 
@@ -575,4 +578,3 @@ class GitStatistics:
 
     def get_stamp_created(self):
         return self.created_time_stamp
-
