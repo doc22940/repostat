@@ -8,6 +8,8 @@ from distutils import version
 from tools.timeit import Timeit
 from tools import sort_keys_by_value_of_key, split_email_address
 
+from .gitdata import WholeHistory as GitWholeHistory
+
 
 class FixedOffset(tzinfo):
     """Fixed offset in minutes east from UTC."""
@@ -151,6 +153,10 @@ class GitStatistics:
         else:
             self.signature_mapper = lambda signature: signature
 
+        whole_history_data = GitWholeHistory(self.repo)
+        whole_history_data.fetch()
+        self.whole_history_df = whole_history_data.as_dataframe()
+
         self.created_time_stamp = datetime.now().timestamp()
         self.analysed_branch = self.repo.head.shorthand
         self.author_of_year = {}
@@ -171,8 +177,8 @@ class GitStatistics:
             self.tags = {}
         self.domains = self.fetch_domains_info()
         self.timezones = self.fetch_timezone_info()
-        self.first_commit_timestamp = min(commit.author.time for commit in self.repo.walk(self.repo.head.target))
-        self.last_commit_timestamp = max(commit.author.time for commit in self.repo.walk(self.repo.head.target))
+        self.first_commit_timestamp = self.whole_history_df["author_timestamp"].min()
+        self.last_commit_timestamp = self.whole_history_df["author_timestamp"].max()
         self.active_days = {datetime.fromtimestamp(commit.author.time).strftime('%Y-%m-%d')
                             for commit in self.repo.walk(self.repo.head.target)}
         self.activity_weekly_hourly = self.fetch_weekly_hourly_activity()
