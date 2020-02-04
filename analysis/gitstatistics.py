@@ -5,6 +5,7 @@ import warnings
 import os
 from distutils import version
 import pandas as pd
+import pytz
 
 from tools.timeit import Timeit
 from tools import sort_keys_by_value_of_key, split_email_address
@@ -344,14 +345,19 @@ class GitStatistics:
 
     @Timeit("Fetching timezone info")
     def fetch_timezone_info(self):
-        result = {}
-        for commit in self.repo.walk(self.repo.head.target):
-            # hint from https://github.com/libgit2/pygit2/blob/master/docs/recipes/git-show.rst
-            tz = FixedOffset(commit.author.offset)
-            dt = datetime.fromtimestamp(float(commit.author.time), tz)
-            timezone_str = dt.strftime('%z')
-            result[timezone_str] = result.get(timezone_str, 0) + 1
-        return result
+        # first group commits by timezones' offset given in minutes
+        ts = self.whole_history_df['author_tz_offset'].groupby(self.whole_history_df['author_tz_offset']).count()
+
+        dummy_timestamp = pd.Timestamp(datetime.utcnow().replace(tzinfo=pytz.utc))
+        # transform tz offsets (given as index of ts) in minutes to strings formatted as strftime('%z')
+        formatted_offsets_ts = ts.reset_index(name="counts")['author_tz_offset'].apply(
+            # in order to use strftime('%z') formatter, one needs to have a valid timezone aware pd.Timestamp
+            # the actual date is not relevant here, so dummy timestamp is used
+            lambda x: dummy_timestamp.tz_convert(pytz.FixedOffset(x)).strftime('%z'))
+
+        # re-create series with formatted index
+        result = pd.Series(ts.values, index=formatted_offsets_ts.values)
+        return result.to_dict()
 
     @Timeit("Fetching weekly/hourly activity info")
     def fetch_weekly_hourly_activity(self):
@@ -396,7 +402,6 @@ class GitStatistics:
         :param timedelta_back: time period from today which is considered 'recent' (given as datetime.timedelta)
         :return: sampled number of commits
         """
-
         today = pd.Timestamp.today().normalize()
         # Monday N weeks ago
         start_activity_date = today - pd.Timedelta(days=today.weekday(), weeks=32)

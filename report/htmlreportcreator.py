@@ -43,7 +43,7 @@ class HTMLReportCreator(object):
 
     def _save_recent_activity_data(self):
         # self.recent_activity_period_weeks from now
-        recent_activity_period = datetime.timedelta(7 * self.recent_activity_period_weeks)
+        recent_activity_period = datetime.timedelta(7 * (self.recent_activity_period_weeks + 1))
         recent_weekly_commits = self.git_repo_statistics.fetch_recent_activity(recent_activity_period)
         with open(os.path.join(self.path, 'recent_activity.dat'), 'w') as f:
             for i in range(0, self.recent_activity_period_weeks):
