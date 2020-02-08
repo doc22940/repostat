@@ -19,6 +19,8 @@ class History:
         records = []
         for commit in repo_walker:
             records.append({'commit_sha': commit.hex,
+                            # TODO: signature mapper
+                            'author_name': commit.author.name,
                             'author_timestamp': commit.author.time,
                             'author_tz_offset': commit.author.offset
                             })

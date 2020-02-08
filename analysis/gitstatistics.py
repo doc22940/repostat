@@ -163,7 +163,6 @@ class GitStatistics:
         self.created_time_stamp = datetime.now().timestamp()
         self.repo_name = os.path.basename(os.path.abspath(path))
         self.analysed_branch = self.repo.head.shorthand
-        self.author_of_year = {}
         self.author_of_month = {}
         self.yearly_commits_timeline = {}
         self.monthly_commits_timeline = {}
@@ -517,6 +516,18 @@ class GitStatistics:
                    for ts, data in self.changes_history.items()), Counter())
         return dict(res)
 
+    def get_authors_ranking_by_year(self):
+        df = pd.DataFrame({'author_name': self.whole_history_df['author_name'],
+                           'timestamp': pd.to_datetime(self.whole_history_df['author_timestamp'], unit='s')})
+        ts_agg = df.groupby([df.timestamp.dt.year, df.author_name]).size()
+        # https://stackoverflow.com/questions/27842613/pandas-groupby-sort-within-groups
+        # group by the first level of the index
+        ts_agg = ts_agg.groupby(level=0, group_keys=False)
+        # then sort each group
+        res = ts_agg.apply(lambda x: x.sort_values(ascending=False))
+
+        return res
+
     def _adjust_winners(self, author, timestamp):
         date = datetime.fromtimestamp(timestamp)
         yymm = date.strftime('%Y-%m')
@@ -524,12 +535,6 @@ class GitStatistics:
             self.author_of_month[yymm][author] = self.author_of_month[yymm].get(author, 0) + 1
         else:
             self.author_of_month[yymm] = {author: 1}
-
-        yy = date.year
-        if yy in self.author_of_year:
-            self.author_of_year[yy][author] = self.author_of_year[yy].get(author, 0) + 1
-        else:
-            self.author_of_year[yy] = {author: 1}
 
     def _adjust_author_changes_history(self, commit, authors_info: dict):
         ts = commit.author.time
