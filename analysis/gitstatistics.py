@@ -163,7 +163,6 @@ class GitStatistics:
         self.created_time_stamp = datetime.now().timestamp()
         self.repo_name = os.path.basename(os.path.abspath(path))
         self.analysed_branch = self.repo.head.shorthand
-        self.author_of_month = {}
         self.yearly_commits_timeline = {}
         self.monthly_commits_timeline = {}
         self.author_changes_history = {}
@@ -282,7 +281,6 @@ class GitStatistics:
             lines_added = st.insertions if not is_merge_commit else 0
             lines_removed = st.deletions if not is_merge_commit else 0
 
-            self._adjust_winners(author_name, child_commit.author.time)
             self.add_commit(author_name, lines_added, lines_removed, commit_day_str, child_commit.author.time)
             if author_name not in result:
                 result[author_name] = AuthorDictFactory.create_author(
@@ -528,13 +526,17 @@ class GitStatistics:
 
         return res
 
-    def _adjust_winners(self, author, timestamp):
-        date = datetime.fromtimestamp(timestamp)
-        yymm = date.strftime('%Y-%m')
-        if yymm in self.author_of_month:
-            self.author_of_month[yymm][author] = self.author_of_month[yymm].get(author, 0) + 1
-        else:
-            self.author_of_month[yymm] = {author: 1}
+    def get_authors_by_month(self):
+        df = pd.DataFrame({'author_name': self.whole_history_df['author_name'],
+                           'timestamp': pd.to_datetime(self.whole_history_df['author_timestamp'], unit='s')
+                          .dt.strftime('%Y-%m')})
+
+        # https://stackoverflow.com/questions/27842613/pandas-groupby-sort-within-groups
+        ts_agg = df.groupby([df.timestamp, df.author_name]).size()\
+            .groupby(level=0, group_keys=False)
+
+        # sort each group by value
+        return ts_agg.apply(lambda x: x.sort_values(ascending=False))
 
     def _adjust_author_changes_history(self, commit, authors_info: dict):
         ts = commit.author.time

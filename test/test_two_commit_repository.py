@@ -44,7 +44,8 @@ class TestTwoCommitRepository(unittest.TestCase):
         self.assertSetEqual({commit_author1.name}, authors_in_history)
 
         # author of the year are estimated similarly so only author of the month is checked
-        nominated_authors = {author for val in gs.author_of_month.values() for author in val.keys()}
+        authors_data = gs.get_authors_by_month()
+        nominated_authors = set(authors_data.index.get_level_values(1))
         self.assertSetEqual({commit_author1.name}, nominated_authors)
 
     def test_contributors(self):
