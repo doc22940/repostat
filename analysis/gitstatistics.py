@@ -1,5 +1,5 @@
 import pygit2 as git
-from datetime import datetime, tzinfo, timedelta
+from datetime import datetime
 from collections import Counter
 import warnings
 import os
@@ -11,64 +11,6 @@ from tools.timeit import Timeit
 from tools import sort_keys_by_value_of_key, split_email_address
 
 from .gitdata import WholeHistory as GitWholeHistory
-
-
-class FixedOffset(tzinfo):
-    """Fixed offset in minutes east from UTC."""
-
-    def __init__(self, offset):
-        self.__offset = timedelta(minutes=offset)
-
-    def utcoffset(self, dt):
-        return self.__offset
-
-    def tzname(self, dt):
-        # we don't know the time zone's name
-        return None
-
-    def dst(self, dt):
-        # we don't know about DST
-        return timedelta(0)
-
-
-class CommitDictFactory:
-    AUTHOR_NAME = "author_name"
-    LINES_REMOVED = "lines_removed"
-    LINES_ADDED = "lines_added"
-    DATE = 'date'
-    TIMESTAMP = "timestamp"
-    FIELD_LIST = [AUTHOR_NAME, LINES_REMOVED, LINES_ADDED, TIMESTAMP]
-
-    @classmethod
-    def create_commit(cls, author, lines_added, lines_removed, date: str, time_stamp: float):
-        result = {
-            cls.AUTHOR_NAME: author,
-            cls.LINES_ADDED: lines_added,
-            cls.LINES_REMOVED: lines_removed,
-            cls.DATE: date,
-            cls.TIMESTAMP: time_stamp
-        }
-        return result
-
-    @classmethod
-    def get_author(cls, commit_detail: dict):
-        return commit_detail[cls.AUTHOR_NAME]
-
-    @classmethod
-    def get_lines_added(cls, commit_detail: dict):
-        return commit_detail[cls.LINES_ADDED]
-
-    @classmethod
-    def get_lines_removed(cls, commit_detail: dict):
-        return commit_detail[cls.LINES_REMOVED]
-
-    @classmethod
-    def get_time_stamp(cls, commit_detail: dict):
-        return commit_detail[cls.TIMESTAMP]
-
-    @classmethod
-    def get_date(cls, commit_detail: dict):
-        return commit_detail[cls.DATE]
 
 
 class AuthorDictFactory:
@@ -166,7 +108,6 @@ class GitStatistics:
         self.yearly_commits_timeline = {}
         self.monthly_commits_timeline = {}
         self.author_changes_history = {}
-        self.commits = []
         self.authors = self.fetch_authors_info()
         if fetch_contribution:
             # this is slow
@@ -250,10 +191,6 @@ class GitStatistics:
         # could be bare git-subprocess invokation, PythonGit package, etc.
         return '{} v.{}'.format(git.__name__, git.LIBGIT2_VERSION)
 
-    def add_commit(self, author, lines_added, lines_removed, time: str, time_stamp):
-        commit_details = CommitDictFactory.create_commit(author, lines_added, lines_removed, time, time_stamp)
-        self.commits.append(commit_details)
-
     @Timeit("Fetching authors info")
     def fetch_authors_info(self):
         """
@@ -281,7 +218,6 @@ class GitStatistics:
             lines_added = st.insertions if not is_merge_commit else 0
             lines_removed = st.deletions if not is_merge_commit else 0
 
-            self.add_commit(author_name, lines_added, lines_removed, commit_day_str, child_commit.author.time)
             if author_name not in result:
                 result[author_name] = AuthorDictFactory.create_author(
                     author_name, lines_removed, lines_added, commit_day_str, 1, child_commit.author.time,
@@ -589,9 +525,6 @@ class GitStatistics:
 
     def get_total_authors(self):
         return self.authors.__len__()
-
-    def get_total_commits(self):
-        return self.commits.__len__()
 
     def get_stamp_created(self):
         return self.created_time_stamp
